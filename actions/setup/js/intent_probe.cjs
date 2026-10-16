@@ -1,6 +1,7 @@
 // @ts-check
 
 const TRIVIAL_PROBE_VALUES = new Set(["test", "testing", "test no base", "probe", "placeholder", "dummy", "temp", "temporary", "todo", "tbd", "wip", "example"]);
+const PLACEHOLDER_ISSUE_TITLES = new Set(["test title", "placeholder title", "dummy title", "example title"]);
 
 /**
  * @param {unknown} value
@@ -98,14 +99,13 @@ function validateCreatePullRequestIntent(entry) {
  * @returns {string|null}
  */
 function validateCreateIssueIntent(entry) {
-  const rawResolvedTitle = resolveIssueTitleForValidation(entry);
-  const body = normalizeProbeValue(entry.body);
+  const title = normalizeProbeValue(resolveIssueTitleForValidation(entry));
 
-  if (isTrivialProbeValue(rawResolvedTitle) && (body === "" || isTrivialProbeValue(body))) {
+  if (TRIVIAL_PROBE_VALUES.has(title) || PLACEHOLDER_ISSUE_TITLES.has(title)) {
     return (
       "Refusing to record an exploratory issue. " +
       "create_issue is for a real intended issue only and successful calls can lead to an externally visible issue. " +
-      "Do not use placeholder titles or bodies like 'test'. " +
+      "Do not use placeholder titles like 'test' or 'Test Title', even with a complete body. " +
       "If you are not ready to open the real issue, use noop or report_incomplete instead."
     );
   }

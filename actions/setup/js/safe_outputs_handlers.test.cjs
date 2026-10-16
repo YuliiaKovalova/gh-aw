@@ -209,6 +209,23 @@ describe("safe_outputs_handlers", () => {
       expect(validateAddCommentIntent({ body: "This is the real follow-up comment." })).toBeNull();
     });
 
+    it.each(["test", "placeholder", "Test Title", "  TEST \t TITLE  ", "Placeholder Title", "Dummy Title", "Example Title"])("rejects placeholder issue titles with a complete report body: %j", title => {
+      expect(
+        validateCreateIssueIntent({
+          title,
+          body: "Reviewed 133 MSBuild files and found two targets whose generated files are not registered for cleanup.",
+        })
+      ).toContain("Refusing to record an exploratory issue");
+    });
+
+    it("rejects a placeholder issue title derived from a substantive body", () => {
+      expect(validateCreateIssueIntent({ body: "\n## Test Title\n\nReviewed MSBuild targets and found missing cleanup registrations." })).toContain("Refusing to record an exploratory issue");
+    });
+
+    it.each(["Test title validation preserves the issue limit", "Fix placeholder titles in MSBuild reports", "Add an example title to the documentation"])("allows descriptive issue titles containing probe words: %s", title => {
+      expect(validateCreateIssueIntent({ title, body: "Track the actual change and its regression coverage." })).toBeNull();
+    });
+
     it("rejects exploratory pull request branch updates and allows real ones", () => {
       expect(
         validatePushToPullRequestBranchIntent({
@@ -3626,6 +3643,38 @@ describe("safe_outputs_handlers", () => {
       expect(responseData.error).toContain("Refusing to record an exploratory issue");
       expect(responseData.error).toContain("noop or report_incomplete");
       expect(mockAppendSafeOutput).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["complete report", "Reviewed 133 MSBuild files and found two targets whose generated files are not registered for cleanup."],
+      ["large report", LARGE_CONTENT_BODY],
+    ])("should reject a placeholder title with a %s without consuming the issue limit", (_description, body) => {
+      const h = createHandlers(mockServer, mockAppendSafeOutput, {
+        create_issue: {
+          max: 1,
+        },
+      });
+
+      const rejected = h.createIssueHandler({ title: "Test Title", body });
+
+      expect(rejected.isError).toBe(true);
+      expect(JSON.parse(rejected.content[0].text)).toEqual({
+        result: "error",
+        error: expect.stringContaining("Refusing to record an exploratory issue"),
+      });
+      expect(mockAppendSafeOutput).not.toHaveBeenCalled();
+
+      const finalIssue = {
+        title: "MSBuild quality report: missing cleanup registrations",
+        body: "Register the generated satellite assemblies in FileWrites so that clean removes them.",
+      };
+      const accepted = h.createIssueHandler(finalIssue);
+
+      expect(accepted.isError).toBeUndefined();
+      expect(JSON.parse(accepted.content[0].text).result).toBe("success");
+      expect(mockAppendSafeOutput).toHaveBeenCalledExactlyOnceWith({ ...finalIssue, type: "create_issue" });
+      expect(() => h.createIssueHandler({ title: "Another actionable finding", body: "This would exceed the single-issue budget." })).toThrow("E002: create_issue limit reached");
+      expect(mockAppendSafeOutput).toHaveBeenCalledTimes(1);
     });
 
     it("should require temporary_id when configured", () => {
